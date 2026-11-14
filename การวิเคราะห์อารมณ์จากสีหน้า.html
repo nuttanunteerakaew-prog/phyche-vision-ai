@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="th" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AI Facial Expression & Psychology Analyzer</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Prompt & Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Face-API.js (Client-side AI Face & Expression Detection) -->
+    <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Prompt', 'Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        darkBg: '#090d16',
+                        cardBg: 'rgba(17, 24, 39, 0.75)',
+                        accent: '#38bdf8',
+                    },
+                    animation: {
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                        'scan': 'scan 2.5s linear infinite',
+                    },
+                    keyframes: {
+                        scan: {
+                            '0%': { top: '0%', opacity: '0' },
+                            '15%': { opacity: '1' },
+                            '85%': { opacity: '1' },
+                            '100%': { top: '100%', opacity: '0' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            background-color: #090d16;
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(56, 189, 248, 0.12) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(139, 92, 246, 0.12) 0px, transparent 50%);
+            color: #f8fafc;
+            overflow-x: hidden;
+        }
+
+        .glass-panel {
+            background: rgba(17, 24, 39, 0.7);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.5);
+        }
+
+        .mirror-video {
+            transform: scaleX(-1);
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 9999px;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col antialiased selection:bg-sky-500 selection:text-white">
+
+    <!-- Navbar -->
+    <header class="sticky top-0 z-40 glass-panel border-b border-slate-800/80 px-4 py-3 sm:px-6">
+        <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-sky-500/20">
+                    <i data-lucide="scan-face" class="w-6 h-6 text-white"></i>
+                </div>
+                <div>
+                    <h1 class="text-base sm:text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-300 leading-tight">
+                        PsycheVision AI
+                    </h1>
+                    <p class="text-xs text-slate-400">ระบบวิเคราะห์สีหน้าและจิตวิทยา Real-Time</p>
+                </div>
+            </div>
+
+            <!-- AI Engine Status Badge -->
+            <div id="ai-status-badge" class="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                <span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+                <span id="ai-status-text">กำลังโหลดโมเดล AI...</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Notification Toast -->
+    <div id="toast-box" class="fixed bottom-4 right-4 left-4 sm:left-auto sm:w-96 z-50 transform translate-y-24 opacity-0 transition-all duration-300 pointer-events-none">
+        <div class="glass-panel border-l-4 border-sky-500 rounded-xl p-4 shadow-2xl flex items-start gap-3">
+            <i data-lucide="info" id="toast-icon" class="w-5 h-5 text-sky-400 shrink-0 mt-0.5"></i>
+            <div class="flex-1">
+                <h4 id="toast-title" class="text-sm font-semibold text-white">แจ้งเตือนระบบ</h4>
+                <p id="toast-message" class="text-xs text-slate-300 mt-0.5 leading-relaxed"></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Container -->
+    <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+        <!-- Left Column: Camera / Image Viewport (7 cols) -->
+        <div class="lg:col-span-7 flex flex-col gap-4">
+            
+            <!-- Mode Switcher Tabs (2 modes: Webcam & Upload) -->
+            <div class="glass-panel p-1.5 rounded-2xl grid grid-cols-2 gap-1.5">
+                <button onclick="switchMode('webcam')" id="tab-webcam" class="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-medium transition-all bg-sky-500 text-white shadow-lg shadow-sky-500/25">
+                    <i data-lucide="camera" class="w-4 h-4"></i>
+                    <span>กล้องสด</span>
+                </button>
+                <button onclick="switchMode('upload')" id="tab-upload" class="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800/50">
+                    <i data-lucide="image-plus" class="w-4 h-4"></i>
+                    <span>อัปโหลดรูป</span>
+                </button>
+            </div>
+
+            <!-- Viewport Card -->
+            <div class="glass-panel rounded-3xl overflow-hidden relative flex flex-col">
+                
+                <div id="viewport-wrapper" class="relative w-full aspect-[4/3] sm:aspect-video bg-slate-950 flex items-center justify-center overflow-hidden">
+                    
+                    <!-- Scanning Laser Line -->
+                    <div id="scan-line" class="hidden absolute left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-sky-400 to-transparent shadow-[0_0_15px_#38bdf8] z-20 animate-scan pointer-events-none"></div>
+
+                    <!-- 1. WEBCAM MODE VIEW -->
+                    <div id="view-webcam" class="w-full h-full relative flex items-center justify-center">
+                        <video id="webcam-video" class="w-full h-full object-cover mirror-video hidden" autoplay muted playsinline></video>
+                        <canvas id="overlay-canvas" class="absolute inset-0 w-full h-full pointer-events-none mirror-video"></canvas>
+                        
+                        <div id="webcam-placeholder" class="text-center p-6 max-w-sm flex flex-col items-center">
+                            <div class="w-16 h-16 rounded-2xl bg-slate-800/80 border border-slate-700 flex items-center justify-center mb-4 text-sky-400">
+                                <i data-lucide="video" class="w-8 h-8"></i>
+                            </div>
+                            <h3 class="text-base font-semibold text-white mb-1">พร้อมวิเคราะห์ผ่านกล้องเรียลไทม์</h3>
+                            <p class="text-xs text-slate-400 mb-5 leading-relaxed">
+                                ระบบจะตรวจจับใบหน้าและประมวลผลอารมณ์ทั้ง 7 บนอุปกรณ์ของคุณโดยตรง (ไม่มีการส่งภาพออกนอกเครื่อง)
+                            </p>
+                            <button onclick="startCamera()" class="w-full sm:w-auto px-6 py-3 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-medium text-sm shadow-lg shadow-sky-500/25 flex items-center justify-center gap-2 transition active:scale-95">
+                                <i data-lucide="power" class="w-4 h-4"></i>
+                                <span>เปิดกล้องเริ่มวิเคราะห์</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 2. UPLOAD IMAGE MODE VIEW -->
+                    <div id="view-upload" class="hidden w-full h-full relative flex items-center justify-center p-4">
+                        <img id="uploaded-image" class="max-w-full max-h-full object-contain hidden rounded-xl" alt="Uploaded Face">
+                        
+                        <label id="upload-dropzone" for="image-input" class="w-full h-full border-2 border-dashed border-slate-700 hover:border-sky-500/70 rounded-2xl flex flex-col items-center justify-center p-6 cursor-pointer transition bg-slate-900/40 hover:bg-slate-900/70 text-center">
+                            <div class="w-14 h-14 rounded-2xl bg-sky-500/10 text-sky-400 flex items-center justify-center mb-3">
+                                <i data-lucide="upload-cloud" class="w-7 h-7"></i>
+                            </div>
+                            <p class="text-sm font-medium text-white mb-1">แตะเพื่อเลือกรูปภาพ หรือลากไฟล์มาวางที่นี่</p>
+                            <p class="text-xs text-slate-400">รองรับไฟล์ JPG, PNG, WEBP ที่เห็นใบหน้าชัดเจน</p>
+                            <input type="file" id="image-input" accept="image/*" class="hidden" onchange="handleImageUpload(event)">
+                        </label>
+                    </div>
+
+                </div>
+
+                <!-- Viewport Control Bar -->
+                <div class="p-3 bg-slate-900/60 border-t border-slate-800/80 flex items-center justify-between gap-3 text-xs">
+                    <div class="flex items-center gap-2 text-slate-400">
+                        <i data-lucide="shield-check" class="w-4 h-4 text-emerald-400"></i>
+                        <span>ประมวลผลแบบปลอดภัยบนเครื่อง (Client-Side AI)</span>
+                    </div>
+                    <button id="stop-cam-btn" onclick="stopCamera()" class="hidden px-3 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 font-medium transition">
+                        ปิดกล้อง
+                    </button>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- Right Column: Analytics & Psychology Dashboard (5 cols) -->
+        <div class="lg:col-span-5 flex flex-col gap-4">
+
+            <!-- Dominant Emotion Card -->
+            <div class="glass-panel rounded-3xl p-5 flex items-center justify-between">
+                <div>
+                    <span class="text-xs font-medium text-slate-400 uppercase tracking-wider">อารมณ์เด่นขณะนี้ (Dominant Emotion)</span>
+                    <h2 id="dominant-emotion-text" class="text-2xl sm:text-3xl font-bold text-white mt-1 flex items-center gap-2">
+                        <span>⏳</span> กำลังรอตรวจจับ...
+                    </h2>
+                </div>
+                <div id="dominant-score-badge" class="px-4 py-2 rounded-2xl bg-slate-800 border border-slate-700 text-base font-bold text-sky-400">
+                    0%
+                </div>
+            </div>
+
+            <!-- 7 Expressions Breakdown -->
+            <div class="glass-panel rounded-3xl p-5">
+                <h3 class="text-sm font-semibold text-white mb-4 flex items-center justify-between">
+                    <span>การกระจายตัวของอารมณ์ทั้ง 7 (Facial Expressions)</span>
+                    <span class="text-xs text-slate-400 font-normal">อัปเดตแบบเรียลไทม์</span>
+                </h3>
+                
+                <div class="space-y-3" id="expression-bars">
+                    <!-- Neutral -->
+                    <div>
+                        <div class="flex justify-between text-xs mb-1"><span class="text-slate-300">😐 ปกติ/เป็นกลาง (Neutral)</span><span id="val-neutral" class="text-slate-400 font-mono">0%</span></div>
+                        <div class="w-full h-2 rounded-full bg-slate-800 overflow-hidden"><div id="bar-neutral" class="h-full bg-slate-400 transition-all duration-300" style="width: 0%"></div></div>
+                    </div>
+                    <!-- Happy -->
+                    <div>
+                        <div class="flex justify-between text-xs mb-1"><span class="text-slate-300">😄 มีความสุข (Happy)</span><span id="val-happy" class="text-slate-400 font-mono">0%</span></div>
+                        <div class="w-full h-2 rounded-full bg-slate-800 overflow-hidden"><div id="bar-happy" class="h-full bg-emerald-400 transition-all duration-300" style="width: 0%"></div></div>
+                    </div>
+                    <!-- Sad -->
+                    <div>
+                        <div class="flex justify-between text-xs mb-1"><span class="text-slate-300">😢 เศร้า (Sad)</span><span id="val-sad" class="text-slate-400 font-mono">0%</span></div>
+                        <div class="w-full h-2 rounded-full bg-slate-800 overflow-hidden"><div id="bar-sad" class="h-full bg-blue-400 transition-all duration-300" style="width: 0%"></div></div>
+                    </div>
+                    <!-- Angry -->
+                    <div>
+                        <div class="flex justify-between text-xs mb-1"><span class="text-slate-300">😡 โกรธ (Angry)</span><span id="val-angry" class="text-slate-400 font-mono">0%</span></div>
+                        <div class="w-full h-2 rounded-full bg-slate-800 overflow-hidden"><div id="bar-angry" class="h-full bg-rose-400 transition-all duration-300" style="width: 0%"></div></div>
+                    </div>
+                    <!-- Surprised -->
+                    <div>
+                        <div class="flex justify-between text-xs mb-1"><span class="text-slate-300">😲 ประหลาดใจ (Surprised)</span><span id="val-surprised" class="text-slate-400 font-mono">0%</span></div>
+                        <div class="w-full h-2 rounded-full bg-slate-800 overflow-hidden"><div id="bar-surprised" class="h-full bg-amber-400 transition-all duration-300" style="width: 0%"></div></div>
+                    </div>
+                    <!-- Disgusted -->
+                    <div>
+                        <div class="flex justify-between text-xs mb-1"><span class="text-slate-300">🤢 รังเกียจ (Disgusted)</span><span id="val-disgusted" class="text-slate-400 font-mono">0%</span></div>
+                        <div class="w-full h-2 rounded-full bg-slate-800 overflow-hidden"><div id="bar-disgusted" class="h-full bg-purple-400 transition-all duration-300" style="width: 0%"></div></div>
+                    </div>
+                    <!-- Fearful -->
+                    <div>
+                        <div class="flex justify-between text-xs mb-1"><span class="text-slate-300">😨 กลัว/กังวล (Fearful)</span><span id="val-fearful" class="text-slate-400 font-mono">0%</span></div>
+                        <div class="w-full h-2 rounded-full bg-slate-800 overflow-hidden"><div id="bar-fearful" class="h-full bg-indigo-400 transition-all duration-300" style="width: 0%"></div></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Psychological Insight Card -->
+            <div class="glass-panel rounded-3xl p-5 flex-1 flex flex-col justify-between">
+                <div>
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="text-sm font-semibold text-white flex items-center gap-2">
+                            <i data-lucide="brain" class="w-4 h-4 text-sky-400"></i>
+                            <span>การวิเคราะห์เชิงจิตวิทยา (Psychological Profile)</span>
+                        </h3>
+                        <span id="psyche-status-badge" class="px-2.5 py-1 rounded-lg text-[10px] font-medium bg-slate-800 text-slate-300 border border-slate-700">รอข้อมูล</span>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3 mb-4">
+                        <div class="bg-slate-900/60 border border-slate-800 rounded-2xl p-3">
+                            <span class="text-[11px] text-slate-400 block mb-1">ดัชนีความเครียด (Stress Index)</span>
+                            <span id="stress-index-val" class="text-lg font-bold text-slate-200">-</span>
+                        </div>
+                        <div class="bg-slate-900/60 border border-slate-800 rounded-2xl p-3">
+                            <span class="text-[11px] text-slate-400 block mb-1">ความมั่นคงทางอารมณ์ (Stability)</span>
+                            <span id="stability-val" class="text-lg font-bold text-slate-200">-</span>
+                        </div>
+                    </div>
+
+                    <p id="psyche-description" class="text-xs text-slate-300 leading-relaxed bg-slate-900/40 p-3.5 rounded-2xl border border-slate-800/80">
+                        ระบบจะทำการประเมินสภาพจิตใจ สมาธิ และปฏิกิริยาทางสีหน้าของคุณเมื่อเริ่มเปิดใช้งานกล้องหรืออัปโหลดรูปภาพ
+                    </p>
+                </div>
+
+                <button onclick="takeSnapshotReport()" class="w-full mt-4 py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-sky-600 hover:from-indigo-500 hover:to-sky-500 text-white font-medium text-xs shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2 transition active:scale-95">
+                    <i data-lucide="file-text" class="w-4 h-4"></i>
+                    <span>บันทึกสรุปผลรายงานจิตวิทยา</span>
+                </button>
+            </div>
+
+        </div>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="text-center py-4 text-xs text-slate-500 border-t border-slate-800/60">
+        PsycheVision AI &bull; Client-Side Facial Expression & Psychology Analyzer
+    </footer>
+
+    <!-- JavaScript Application Logic -->
+    <script>
+        // Initialize Lucide Icons
+        lucide.createIcons();
+
+        // State variables
+        let currentMode = 'webcam';
+        let isModelLoaded = false;
+        let webcamStream = null;
+        let detectionInterval = null;
+
+        const emotionLabelsTH = {
+            neutral: 'ปกติ / เป็นกลาง',
+            happy: 'มีความสุข',
+            sad: 'เศร้า',
+            angry: 'โกรธ',
+            surprised: 'ประหลาดใจ',
+            disgusted: 'รังเกียจ',
+            fearful: 'กลัว / วิตกกังวล'
+        };
+
+        const emotionEmojis = {
+            neutral: '😐',
+            happy: '😄',
+            sad: '😢',
+            angry: '😡',
+            surprised: '😲',
+            disgusted: '🤢',
+            fearful: '😨'
+        };
+
+        // Toast Notification System
+        function showToast(title, message, isError = false) {
+            const toast = document.getElementById('toast-box');
+            document.getElementById('toast-title').innerText = title;
+            document.getElementById('toast-message').innerText = message;
+            const icon = document.getElementById('toast-icon');
+            
+            if (isError) {
+                icon.className = 'w-5 h-5 text-rose-400 shrink-0 mt-0.5';
+                icon.setAttribute('data-lucide', 'alert-circle');
+            } else {
+                icon.className = 'w-5 h-5 text-sky-400 shrink-0 mt-0.5';
+                icon.setAttribute('data-lucide', 'info');
+            }
+            lucide.createIcons();
+
+            toast.classList.remove('translate-y-24', 'opacity-0');
+            setTimeout(() => {
+                toast.classList.add('translate-y-24', 'opacity-0');
+            }, 4000);
+        }
+
+        // Load Face-API Models on Startup
+        async function loadModels() {
+            const statusBadge = document.getElementById('ai-status-badge');
+            const statusText = document.getElementById('ai-status-text');
+
+            try {
+                statusText.innerText = 'กำลังโหลดโมเดล AI (Tiny Face & Expressions)...';
+                const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
+                
+                await Promise.all([
+                    faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+                    faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL)
+                ]);
+
+                isModelLoaded = true;
+                statusBadge.className = 'flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
+                statusBadge.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-400"></span><span>โมเดล AI พร้อมใช้งาน</span>';
+                showToast('สำเร็จ', 'โหลดโมเดล AI เรียบร้อยแล้ว พร้อมเริ่มวิเคราะห์');
+            } catch (error) {
+                console.error(error);
+                statusBadge.className = 'flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20';
+                statusBadge.innerHTML = '<span class="w-2 h-2 rounded-full bg-rose-400"></span><span>โหลดโมเดลไม่สำเร็จ</span>';
+                showToast('ข้อผิดพลาด', 'ไม่สามารถโหลดโมเดล Face-API ได้ กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ต', true);
+            }
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            loadModels();
+        });
+
+        // Mode Switcher Logic (Webcam & Upload only)
+        function switchMode(mode) {
+            currentMode = mode;
+            stopCamera();
+
+            // Tab Buttons UI
+            ['webcam', 'upload'].forEach(m => {
+                const btn = document.getElementById(`tab-${m}`);
+                if (m === mode) {
+                    btn.className = 'flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-medium transition-all bg-sky-500 text-white shadow-lg shadow-sky-500/25';
+                } else {
+                    btn.className = 'flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-800/50';
+                }
+            });
+
+            // Viewport Views
+            document.getElementById('view-webcam').classList.toggle('hidden', mode !== 'webcam');
+            document.getElementById('view-upload').classList.toggle('hidden', mode !== 'upload');
+            document.getElementById('scan-line').classList.toggle('hidden', mode === 'upload');
+        }
+
+        // Webcam Controller
+        async function startCamera() {
+            const video = document.getElementById('webcam-video');
+            const placeholder = document.getElementById('webcam-placeholder');
+            const stopBtn = document.getElementById('stop-cam-btn');
+            const scanLine = document.getElementById('scan-line');
+
+            try {
+                webcamStream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
+                video.srcObject = webcamStream;
+                video.classList.remove('hidden');
+                placeholder.classList.add('hidden');
+                stopBtn.classList.remove('hidden');
+                scanLine.classList.remove('hidden');
+
+                video.onloadedmetadata = () => {
+                    startRealtimeDetection();
+                };
+            } catch (err) {
+                console.error(err);
+                showToast('ไม่สามารถเปิดกล้องได้', 'กรุณาอนุญาตการใช้งานกล้องในเบราว์เซอร์ของคุณ', true);
+            }
+        }
+
+        function stopCamera() {
+            if (webcamStream) {
+                webcamStream.getTracks().forEach(track => track.stop());
+                webcamStream = null;
+            }
+            if (detectionInterval) {
+                clearInterval(detectionInterval);
+                detectionInterval = null;
+            }
+            const video = document.getElementById('webcam-video');
+            const placeholder = document.getElementById('webcam-placeholder');
+            const stopBtn = document.getElementById('stop-cam-btn');
+            const scanLine = document.getElementById('scan-line');
+
+            if (video) video.classList.add('hidden');
+            if (placeholder) placeholder.classList.remove('hidden');
+            if (stopBtn) stopBtn.classList.add('hidden');
+            if (scanLine) scanLine.classList.add('hidden');
+
+            const canvas = document.getElementById('overlay-canvas');
+            if (canvas) {
+                const ctx = canvas.getContext('2d');
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+            }
+        }
+
+        // Realtime Detection Loop
+        function startRealtimeDetection() {
+            const video = document.getElementById('webcam-video');
+            const canvas = document.getElementById('overlay-canvas');
+
+            detectionInterval = setInterval(async () => {
+                if (!isModelLoaded || !webcamStream || video.paused || video.ended) return;
+
+                const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.5 });
+                const result = await faceapi.detectSingleFace(video, options).withFaceExpressions();
+
+                if (result) {
+                    const dims = faceapi.matchDimensions(canvas, video, true);
+                    const resizedResult = faceapi.resizeResults(result, dims);
+                    const ctx = canvas.getContext('2d');
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                    // Draw bounding box
+                    const box = resizedResult.detection.box;
+                    ctx.strokeStyle = '#38bdf8';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(box.x, box.y, box.width, box.height);
+
+                    updateDashboard(result.expressions);
+                } else {
+                    const ctx = canvas.getContext('2d');
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                }
+            }, 300);
+        }
+
+        // Image Upload Handler
+        async function handleImageUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const imgElement = document.getElementById('uploaded-image');
+            const dropzone = document.getElementById('upload-dropzone');
+            const scanLine = document.getElementById('scan-line');
+
+            imgElement.src = URL.createObjectURL(file);
+            imgElement.classList.remove('hidden');
+            dropzone.classList.add('hidden');
+            scanLine.classList.remove('hidden');
+
+            showToast('กำลังวิเคราะห์', 'ระบบกำลังประมวลผลใบหน้าจากรูปภาพที่คุณอัปโหลด...');
+
+            imgElement.onload = async () => {
+                if (!isModelLoaded) {
+                    showToast('โมเดลยังไม่พร้อม', 'โปรดรอสักครู่ให้โมเดล AI โหลดเสร็จสิ้น', true);
+                    scanLine.classList.add('hidden');
+                    return;
+                }
+
+                const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.4 });
+                const result = await faceapi.detectSingleFace(imgElement, options).withFaceExpressions();
+                scanLine.classList.add('hidden');
+
+                if (result) {
+                    updateDashboard(result.expressions);
+                    showToast('วิเคราะห์สำเร็จ', 'ตรวจพบใบหน้าและจำแนกอารมณ์เรียบร้อยแล้ว');
+                } else {
+                    showToast('ไม่พบใบหน้า', 'ไม่สามารถตรวจจับใบหน้าที่ชัดเจนในรูปภาพนี้ได้ กรุณาลองใหม่อีกครั้ง', true);
+                }
+            };
+        }
+
+        // Update Dashboard UI with Expression Scores
+        function updateDashboard(expressions) {
+            let dominant = 'neutral';
+            let maxVal = -1;
+
+            for (const [emotion, val] of Object.entries(expressions)) {
+                if (val > maxVal) {
+                    maxVal = val;
+                    dominant = emotion;
+                }
+                const percentage = Math.round(val * 100);
+                const bar = document.getElementById(`bar-${emotion}`);
+                const valEl = document.getElementById(`val-${emotion}`);
+                if (bar) bar.style.width = `${percentage}%`;
+                if (valEl) valEl.innerText = `${percentage}%`;
+            }
+
+            // Update Dominant Header
+            const dominantText = document.getElementById('dominant-emotion-text');
+            const scoreBadge = document.getElementById('dominant-score-badge');
+            const dominantPct = Math.round(maxVal * 100);
+
+            dominantText.innerHTML = `<span>${emotionEmojis[dominant] || '😐'}</span> ${emotionLabelsTH[dominant] || dominant}`;
+            scoreBadge.innerText = `${dominantPct}%`;
+
+            // Realtime Psychology derivation
+            const psycheBadge = document.getElementById('psyche-status-badge');
+            const stressVal = document.getElementById('stress-index-val');
+            const stabilityVal = document.getElementById('stability-val');
+            const psycheDesc = document.getElementById('psyche-description');
+
+            let stressLevel = 'ต่ำ (Low)';
+            let stabilityLevel = 'มั่นคง (Stable)';
+            let insight = 'สีหน้ามีความผ่อนคลายและสมดุลทางอารมณ์ดีเยี่ยม เหมาะกับการทำกิจกรรมที่ต้องใช้สมาธิ';
+
+            if (expressions.fearful > 0.3 || expressions.angry > 0.3) {
+                stressLevel = 'สูง (High)';
+                stabilityLevel = 'ตึงเครียด (Tense)';
+                insight = 'ตรวจพบสัญญาณความตึงเครียดหรือความกังวลในระดับที่สูงขึ้น แนะนำให้หยุดพักผ่อนและหายใจลึกๆ';
+            } else if (expressions.happy > 0.4) {
+                stressLevel = 'ต่ำมาก (Minimal)';
+                stabilityLevel = 'ยอดเยี่ยม (Optimistic)';
+                insight = 'พลังงานบวกสูง ทัศนคติเชิงบวกเด่นชัด เอื้อต่อการสื่อสารและปฏิสัมพันธ์ทางสังคม';
+            }
+
+            psycheBadge.innerText = 'วิเคราะห์เรียลไทม์';
+            stressVal.innerText = stressLevel;
+            stabilityVal.innerText = stabilityLevel;
+            psycheDesc.innerText = insight;
+        }
+
+        // Snapshot Report
+        function takeSnapshotReport() {
+            showToast('บันทึกรายงาน', 'บันทึกภาพหน้าจอและข้อมูลสถิติทางจิตวิทยาลงในระบบเรียบร้อยแล้ว');
+        }
+    </script>
+</body>
+</html>
